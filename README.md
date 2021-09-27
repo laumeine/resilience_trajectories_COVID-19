@@ -3,4 +3,6 @@ Data and code for: Meine, L.E., Strömer, E., Schönfelder, S., Eckhardt, E.I., 
 
 [OSF Project Page](https://osf.io/embcr/).
 
+Currently, only Mplus input files are available since the output files exceed GitHub's file size limit.
+
 For questions, email laura.meine@bli.uzh.ch.
