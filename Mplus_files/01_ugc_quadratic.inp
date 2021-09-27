@@ -1,0 +1,20 @@
+TITLE:      UNIVARIATE GROWTH CURVE (quadratic)
+DATA:       FILE IS 'W:\AKTUELL\Forschungsprojekte\JGU SFB Resilienz\
+            Corona-Pandemie-Follow-Up\Data\Boosterit\ResilienceTrajectories\
+            data\data4Mplus.csv';
+VARIABLE:   NAMES ARE Code Kohorte Age Gender
+            FSOZ_T0 GSE_T0 HSF_T0 OPT_TO
+            mhPCA_T0 mhPCA_T1 mhPCA_T2 mhPCA_T3
+            RF_T0  RF_T1  RF_T2  RF_T3
+            stressPCA_T0 stressPCA_T1 stressPCA_T2 stressPCA_T3;
+            USEVAR = RF_T0-RF_T3;
+!ANALYSIS:   ESTIMATOR IS MLMV; ! this is required for automated chi-square DIFFTEST
+MODEL:      i s q | RF_T0@0 RF_T1@1 RF_T2@2 RF_T3@3;
+            RF_T3@0; ! fix residual variance to zero to avoid warning of negative res. variance
+OUTPUT:     SAMPSTAT STANDARDIZED TECH4;
+!SAVEDATA:   DIFFTEST IS 01_ugc_q; ! safe file for DIFFTEST
+PLOT:       SERIES = RF_T0-RF_T3 (s);
+            TYPE = PLOT3;
+   
+                 
+

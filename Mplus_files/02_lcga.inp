@@ -1,0 +1,29 @@
+TITLE:      LATENT CLASS GROWTH ANALYSIS
+DATA:       FILE IS 'W:\AKTUELL\Forschungsprojekte\JGU SFB Resilienz\
+            Corona-Pandemie-Follow-Up\Data\Boosterit\ResilienceTrajectories\
+            data\data4Mplus.csv';
+            LISTWISE = ON;
+VARIABLE:   NAMES ARE Code Kohorte Age Gender
+            FSOZ_T0 GSE_T0 HSF_T0 OPT_TO
+            mhPCA_T0 mhPCA_T1 mhPCA_T2 mhPCA_T3
+            RF_T0  RF_T1  RF_T2  RF_T3
+            stressPCA_T0 stressPCA_T1 stressPCA_T2 stressPCA_T3;
+            USEVAR = RF_T0-RF_T3;
+            CLASSES = c(4); 
+ANALYSIS:   TYPE = MIXTURE;
+            STARTS = 500 10;
+            STITERATIONS = 10;
+            LRTBOOTSTRAP = 50;
+! avoid warnings about log-likelihoods not being replicated in bootstrap draws
+            LRTSTARTS = 0 0 500 200; 
+            !OPTSEED = 68850; ! use 1st and 2nd seed to replicate estimates
+MODEL:      %OVERALL%
+            i s | RF_T0@0 RF_T1@1 RF_T2@2 RF_T3@3;
+            i-s@0; ! set variances to zero for LCGA
+OUTPUT:     SAMPSTAT STANDARDIZED TECH1;
+            TECH7 TECH8 TECH11 TECH13 TECH14;
+SAVEDATA:   FILE IS 02_lcga_output_TDIST.txt;
+            SAVE = CPROB; ! output class membership for each id
+PLOT:       SERIES = RF_T0-RF_T3 (s);
+            TYPE = PLOT3;
+   
