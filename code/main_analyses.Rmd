@@ -1,7 +1,7 @@
 ---
 title: "Analyses for 'Look After Yourself: Students Consistently Showing High Resilience Engaged in More Self Care and Proved More Resilient During the COVID 19 Pandemic'"
 author: "Laura E. Meine"
-date: "27.09.2021"
+date: "12.11.2021"
 output:
   html_document:
     self_contained: no
@@ -26,10 +26,6 @@ Data from Boosterit project cohorts 3 and 4, matched according to data collectio
 Cohort 3: T2-T5  
 Cohort 4: T0-T3
 
-TODOs  
-- save class probabilities in case you want to check whether there are ids with low probs, not easily assigned to one class  
-- translate all variables to English, then load curated datasets here ("Kohorte" --> cohort)
-
 ```{r set stage, include=FALSE}
 # load required libraries
 if (!require("pacman")) install.packages("pacman")
@@ -44,6 +40,7 @@ pacman::p_load(tidyverse, # data formatting, ggplot2
                lm.beta, # get standardized betas
                car) # vif, dwt
 
+source("R_functions/resilience_scores.R") # compute resilient functioning score
 source("R_functions/summarySEwithin2.R") # within-subject standard errors
 source("R_functions/laura_theme.R") # standard ggplot theme
 
@@ -64,11 +61,11 @@ scale_this <- function(x) as.vector(scale(x))
 center_this <- function(x) as.vector(scale(x, scale=FALSE))
 ```
 
-```{r import and format data}
+```{r import and format data, include=F}
 data_long <- read.csv("../data/data_matched_long.csv", header=T, sep="\t") # data T0-T3, long format
 data_wide <- read.csv("../data/data_matched_wide.csv", header=T, sep="\t") # data T0-T3, wide format
 data_pandemic <- read.csv("../data/data_matched_pandemic.csv", header=T, sep="\t") # data pandemic
-classes <- read.table("Mplus_files/02_lcga_output_4-class.txt", header=F) # trajectory class assignment output after LGCA analysis in Mplus
+classes <- read.table("../Mplus_files/02_lcga_output_4-class.txt", header=F) # trajectory class assignment output after LGCA analysis in Mplus
 
 classes <- cbind(data_wide[1], classes$V13) # add id to classes
 colnames(classes) <- c("Code", "class")
@@ -83,14 +80,67 @@ data_long <- data_long %>% left_join(classes)
 
 data_wide$Code <- as.factor(data_wide$Code)
 
+# fix some participant codes in pandemic data where German umlaut is not correctly displayed for some reason
+data_pandemic$Code[data_pandemic$Code=="AN25R‹JU"] <- "AN25RÜJU"
+data_pandemic$Code[data_pandemic$Code=="GA20K÷NA"] <- "GA20KÖNA"
+data_pandemic$Code[data_pandemic$Code=="IL09WöLI"] <- "IL09WÜLI"
+data_pandemic$Code[data_pandemic$Code=="OH02OFBR"] <- "OH2OFBR" # typo
+data_pandemic$Code[data_pandemic$Code=="ON18RöIS"] <- "ON18RÜIS"
+data_pandemic$Code[data_pandemic$Code=="ST03KôBI"] <- "ST03KÖBI"
+data_pandemic$Code[data_pandemic$Code=="AN09WöJA"] <- "AN09WÜJA"
+data_pandemic$Code[data_pandemic$Code=="ƒR04MAFR"] <- "ÄR04MAFR"
+data_pandemic$Code[data_pandemic$Code=="LK11GôKA"] <- "LK11GÖKA"
+data_pandemic$Code[data_pandemic$Code=="LK26RöAL"] <- "LK26RÜAL"
+data_pandemic$Code[data_pandemic$Code=="SA29R‹DO"] <- "SA29RÜDO"
+
 # merge classes & pandemic data
 data_wide_pandemic <- list(classes, data_pandemic) %>% reduce(left_join, by = "Code")
 data_wide_pandemic$Code <- as.factor(data_wide_pandemic$Code)
 data_wide_pandemic <- data_wide_pandemic %>% 
-  filter(! is.na(Kohorte)) # 108/133 participants completed follow-up
+  filter(! is.na(Cohort)) # 117/133 participants completed follow-up
+```
+
+```{r compute T4 resilient functioning score, include=F}
+# compute resilient functioning score during pandemic (T4)
+
+# indicators of mental health
+mh_items <- data_wide_pandemic %>% select(BSI_P_GSI_INV, WHO_P)
+
+# indicators of stress
+stress_items <- data_wide_pandemic %>% select(MIMIS_P_freq, LES_P_Count)
+
+results <- resilience_scores(mh_items, stress_items)
+
+summary(results$LM) # get results of linear regression mh ~ stress
+summary(results$MH_PCA) # mh component 1 explains 76% variance
+summary(results$Stress_PCA) # stress component 1 explains 72% variance
+
+# add resulting scores to data
+data_wide_pandemic$RF_P <- unlist(results[1])
+data_wide_pandemic$stressPCA_P <- unlist(results[2])
+data_wide_pandemic$mhPCA_P <- unlist(results[3])
+
+# check data
+grep("BSI_P_GSI_INV", colnames(data_wide_pandemic)) # index BSI_GSI inverted: 6
+grep("WHO_P", colnames(data_wide_pandemic)) # index WHO: 51
+
+index_max_mh <- which.max(data_wide_pandemic$mhPCA_P) # id with highest mh component 1 score
+data_wide_pandemic[index_max_mh, c(6,51)] # high WHO and BSI score, so high mh component score correctly indicates high mh
+index_min_mh <- which.min(data_wide_pandemic$mhPCA_P) # id with lowest mh component 1 score
+data_wide_pandemic[index_min_mh,c(6,51)] # low WHO and BSI score, so low mh component score correctly indicates low mh
+
+grep("MIMIS_P_freq", colnames(data_wide_pandemic)) # index MIMIS Frequency: 49
+grep("LES_P_Count", colnames(data_wide_pandemic)) # index LES Frequency: 47
+
+index_max_stress <- which.max(data_wide_pandemic$stressPCA_P) # id with highest stress component 1 score
+data_wide_pandemic[index_max_stress, c(49,47)] # high MIMIS and LES score
+index_min_stress <- which.min(data_wide_pandemic$stressPCA_P) # id with lowest stress component 1 score
+data_wide_pandemic[index_min_stress,c(49,47)] # low MIMIS and LES score
 ```
 
 # Sample Descriptives
+
+## T0-T3
 
 ```{r sample descriptives}
 N <- nrow(data_wide) # sample size
@@ -103,9 +153,13 @@ age.max <- max(data_wide$Age, na.rm=T)
 age.m <- mean(data_wide$Age, na.rm=T) 
 age.sd <- sd(data_wide$Age, na.rm=T)
 
-cohort4 <- (table(data_wide$Kohorte)[2]/nrow(data_wide))*100 # % cohort 4 
+cohort4 <- (table(data_wide$Cohort)[2]/nrow(data_wide))*100 # % cohort 4 
 ```
 Data from *N* = `r round(N,2)` participants aged `r round(age.min,2)`-`r round(age.max,2)` was analyzed (`r round(female,2)` % female, age: *M* = `r round(age.m,2)`, *SD* = `r round(age.sd,2)`).
+
+## T4
+
+slightly reduced sample for pandemic time point
 
 ```{r sample descriptives - COVID-19 sample}
 Np <- nrow(data_wide_pandemic) # sample size (pandemic follow-up)
@@ -118,7 +172,7 @@ age.maxP <- max(data_wide_pandemic$Age, na.rm=T)
 age.mP <- mean(data_wide_pandemic$Age, na.rm=T) 
 age.sdP <- sd(data_wide_pandemic$Age, na.rm=T)
 
-cohort4P <- (table(data_wide_pandemic$Kohorte)[2]/nrow(data_wide_pandemic))*100 # % cohort 4 
+cohort4P <- (table(data_wide_pandemic$Cohort)[2]/nrow(data_wide_pandemic))*100 # % cohort 4 
 
 # Do you belong to a risk group for severe COVID-19?
 table(data_wide_pandemic$COR_F_T4_1) # 1=yes, 2=no, 3=unsure
@@ -148,7 +202,7 @@ hist(data_wide_pandemic$COR_F_T4_6)
 follow_measures.m <- mean(data_wide_pandemic$COR_F_T4_6)
 follow_measures.sd <- sd(data_wide_pandemic$COR_F_T4_6)
 ```
-
+Data from *Np* = `r round(Np,2)` participants aged `r round(age.minP,2)`-`r round(age.maxP,2)` (`r round(femaleP,2)` % female, age: *M* = `r round(age.mP,2)`, *SD* = `r round(age.sdP,2)`) could be analyzed for the time point during the lockdown.
 
 # Resilient Functioning Trajectories
 
@@ -157,7 +211,7 @@ There are distinct classes of trajectories.
 
 ```{r resilient functioning scores}
 # plot relationship between mental health and stress components for T0-T3 to visualize individual resilient functioning scores
-options(scipen=999)
+options(scipen=999) # don't show results in exponential notation
 
 # T0
 mT0 <- lm(mhPCA_T0 ~ stressPCA_T0, data_wide); summary(mT0) # linear regression
@@ -323,7 +377,7 @@ Mplustrajectories <- ggplot(mplus_output, aes(x=timepoint, y=RF, group=class, co
 Mplustrajectories
 ```
 
-## Plot Trajectories including individual data
+## Plot Trajectories with individual data
 ```{r plot individual trajectories}
 # plot trajectories
 trajectories <- ggplot(data_long, aes(x=factor(timepoint), y=RF, colour=class)) +
@@ -344,10 +398,10 @@ trajectories
 ```{r class descriptives - cohort distribution}
 RF_class_cohort <- data_wide %>%
   group_by(class) %>%
-  tally(mean(Kohorte==4)*100) # % cohort 4
+  tally(mean(Cohort==4)*100) # % cohort 4
 
 # Chi-square test
-chisq.test(data_wide$Kohorte, data_wide$class) # cohort and class membership are dependent!
+chisq.test(data_wide$Cohort, data_wide$class) # cohort and class membership are dependent!
 ```
 
 ### Gender
@@ -382,7 +436,7 @@ shapiro.test(residuals(ageModel)) # non-normal distribution
 kruskal.test(Age ~ class, data_wide) # n.s.
 ```
 
-Since resilient functioning score does not directly show how different classes score on stress and mental health, we output the average across time points for all measures that make up the score (BSI, WHO, DH, LES).
+Since resilient functioning score does not directly show how different classes score on stress and mental health, we output the average across time points for all measures that make up the score (BSI, WHO, MIMIS, LES).
 
 ### BSI
 ```{r class descriptives - BSI}
@@ -467,9 +521,9 @@ who.fit <- aov_ez("Code", "WHO_mean", data_wide, between="class")
 nice(who.fit, es="pes") # p < .001
 
 # plot trajectories of WHO
-RF_class_means_who <- summarySEwithin2(data_long, measurevar="WHO_Percent", betweenvar="class", withinvar="timepoint", idvar="Code", conf.interval=.95)
+RF_class_means_who <- summarySEwithin2(data_long, measurevar="WHO", betweenvar="class", withinvar="timepoint", idvar="Code", conf.interval=.95)
 
-WHOtrajectories <- ggplot(RF_class_means_who, aes(x=timepoint, y=WHO_Percent, group=class, color=class)) +
+WHOtrajectories <- ggplot(RF_class_means_who, aes(x=timepoint, y=WHO, group=class, color=class)) +
   geom_line(size=1.5) +
   geom_point(aes(shape=class), size=4) +
   scale_y_continuous(breaks=seq(0,100,20), limits=c(0,100)) +
@@ -485,41 +539,41 @@ WHOtrajectories
 ```
 
 ### Frequency of microstressors
-```{r class descriptives - DH}
-DH_freqs <- data_wide %>% select("DH_T0_Frequency", "DH_T1_Frequency", "DH_T2_Frequency", "DH_T3_Frequency")
-data_wide$DH_mean_Frequency <- rowMeans(DH_freqs)
+```{r class descriptives - MIMIS}
+MIMIS_freqs <- data_wide %>% select("MIMIS_T0_Frequency", "MIMIS_T1_Frequency", "MIMIS_T2_Frequency", "MIMIS_T3_Frequency")
+data_wide$MIMIS_mean_Frequency <- rowMeans(MIMIS_freqs)
 
-RF_class_means_DH <- data_wide %>%
+RF_class_means_MIMIS <- data_wide %>%
   group_by(class) %>%
-  summarise_at(vars(DH_mean_Frequency),
+  summarise_at(vars(MIMIS_mean_Frequency),
                list(mean = mean,
                     sd = sd))
 
 # get outlier IDs
-dhOutlierIDs <- data_wide %>%
-  identify_outliers(DH_mean_Frequency)
+mimisOutlierIDs <- data_wide %>%
+  identify_outliers(MIMIS_mean_Frequency)
 
 # to be conservative and not exclude too much data, we will only consider extreme outliers
-dhOutlierIDs$Code[dhOutlierIDs$is.extreme==T] # no extreme outliers
+mimisOutlierIDs$Code[mimisOutlierIDs$is.extreme==T] # no extreme outliers
 
 # check assumptions for one-way ANOVA
-dhModel <- lm(DH_mean_Frequency ~ class, data_wide)
+mimisModel <- lm(MIMIS_mean_Frequency ~ class, data_wide)
 
 # homogeneity of variance
-plot(dhModel, 1) 
-levene_test(dhModel)
+plot(mimisModel, 1) 
+levene_test(mimisModel)
 
 # normality of residuals
-plot(dhModel, 2)
-shapiro.test(residuals(dhModel)) # non-normal distribution
+plot(mimisModel, 2)
+shapiro.test(residuals(mimisModel)) # non-normal distribution
 
 # use Kruskal-Wallis test instead of ANOVA
-kruskal.test(DH_mean_Frequency ~ class, data_wide) # p < .05
+kruskal.test(MIMIS_mean_Frequency ~ class, data_wide) # p < .05
 
-# plot trajectories of DH freq
-RF_class_means_dh <- summarySEwithin2(data_long, measurevar="DH_Frequency", betweenvar="class", withinvar="timepoint", idvar="Code", conf.interval=.95)
+# plot trajectories of MIMIS freq
+RF_class_means_mimis <- summarySEwithin2(data_long, measurevar="MIMIS_Frequency", betweenvar="class", withinvar="timepoint", idvar="Code", conf.interval=.95)
 
-DHtrajectories <- ggplot(RF_class_means_dh, aes(x=timepoint, y=DH_Frequency, group=class, color=class)) +
+MIMIStrajectories <- ggplot(RF_class_means_mimis, aes(x=timepoint, y=MIMIS_Frequency, group=class, color=class)) +
   geom_line(size=1.5) +
   geom_point(aes(shape=class), size=4) +
   #scale_y_continuous(breaks=seq(20,80,20), limits=c(20,80)) +
@@ -531,7 +585,7 @@ DHtrajectories <- ggplot(RF_class_means_dh, aes(x=timepoint, y=DH_Frequency, gro
                      labels=c("low (9.0%)", "high (28.6%)", "medium (46.6%)", "medium-to-low (15.8%)"),
                      name="Trajectory Class") +
   laura_theme() + theme(legend.position="none")
-DHtrajectories
+MIMIStrajectories
 ```
 
 ### Count of stressful life events
@@ -594,7 +648,7 @@ Limitation: In cohort 3, actual T0 was 6 months before what is considered T0 in 
 ## optimism
 ```{r optimism across latent classes}
 # boxplot by class
-optBoxPlot <- ggplot(data_wide, aes(class, LOT_T0_Optimismus, fill=class)) + 
+optBoxPlot <- ggplot(data_wide, aes(class, LOT_Opt_T0, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Optimism", x="Class") +
@@ -604,13 +658,13 @@ optBoxPlot # no outliers
 
 # get outlier IDs
 optOutlierIDs <- data_wide %>%
-  identify_outliers(LOT_T0_Optimismus)
+  identify_outliers(LOT_Opt_T0)
 
 # to be conservative and not exclude too much data, we will only consider extreme outliers
 optOutlierIDs$Code[optOutlierIDs$is.extreme==T] # no extreme outliers
 
 # check assumptions for one-way ANOVA
-optModel  <- lm(LOT_T0_Optimismus ~ class, data = data_wide)
+optModel  <- lm(LOT_Opt_T0 ~ class, data = data_wide)
 
 # homogeneity of variance
 plot(optModel, 1) 
@@ -621,17 +675,17 @@ plot(optModel, 2)
 shapiro.test(residuals(optModel)) 
 
 # one-way ANOVA
-opt.fit <- aov_ez("Code","LOT_T0_Optimismus", data_wide, between=c("class"))
+opt.fit <- aov_ez("Code","LOT_Opt_T0", data_wide, between=c("class"))
 nice(opt.fit, es="pes") # p < .001
 
 # optimism by class
-opt_class <- summarySE(data_wide, measurevar="LOT_T0_Optimismus", groupvars="class", conf.interval=.95) 
+opt_class <- summarySE(data_wide, measurevar="LOT_Opt_T0", groupvars="class", conf.interval=.95) 
 ```
 
 ## self-care
 ```{r self-care across latent classes}
 # boxplot by class
-scrBoxPlot <- ggplot(data_wide, aes(class, HSF_T0_Gesamt, fill=class)) + 
+scrBoxPlot <- ggplot(data_wide, aes(class, HamSCQ_T0, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Self-Care", x="Class") +
@@ -641,13 +695,13 @@ scrBoxPlot
 
 # get outlier IDs
 scrOutlierIDs <- data_wide %>%
-  identify_outliers(HSF_T0_Gesamt)
+  identify_outliers(HamSCQ_T0)
 
 # to be conservative and not exclude too much data, we will only consider extreme outliers
 scrOutlierIDs$Code[scrOutlierIDs$is.extreme==T] # no extreme outliers
 
 # check assumptions for one-way ANOVA
-scrModel  <- lm(HSF_T0_Gesamt ~ class, data = data_wide)
+scrModel  <- lm(HamSCQ_T0 ~ class, data = data_wide)
 
 # homogeneity of variance
 plot(scrModel, 1) 
@@ -658,18 +712,18 @@ plot(scrModel, 2)
 shapiro.test(residuals(scrModel)) 
 
 # run Kruskal-Wallis test instead of one-way ANOVA
-kruskal.test(HSF_T0_Gesamt ~ class, data = data_wide) # sig. differences across groups
+kruskal.test(HamSCQ_T0 ~ class, data = data_wide) # sig. differences across groups
 
 # self-care by class
-scr_class <- summarySE(data_wide, measurevar="HSF_T0_Gesamt", groupvars="class", conf.interval=.95) 
+scr_class <- summarySE(data_wide, measurevar="HamSCQ_T0", groupvars="class", conf.interval=.95) 
 
-data_wide %>% kruskal_effsize(HSF_T0_Gesamt ~ class)
+data_wide %>% kruskal_effsize(HamSCQ_T0 ~ class)
 ```
 
 ## social support
 ```{r social support across latent classes}
 # boxplot by class
-socBoxPlot <- ggplot(data_wide, aes(class, FSOZ_T0_Gesamt, fill=class)) + 
+socBoxPlot <- ggplot(data_wide, aes(class, FSozU_T0, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Social Support", x="Class") +
@@ -679,13 +733,13 @@ socBoxPlot
 
 # get outlier IDs
 socOutlierIDs <- data_wide %>%
-  identify_outliers(FSOZ_T0_Gesamt)
+  identify_outliers(FSozU_T0)
 
 # check if extreme outlier
 socOutlierIDs$Code[socOutlierIDs$is.extreme==T] # no extreme outlier
 
 # check assumptions for one-way ANOVA
-socModel  <- lm(FSOZ_T0_Gesamt ~ class, data = data_wide)
+socModel  <- lm(FSozU_T0 ~ class, data = data_wide)
 
 # homogeneity of variance
 plot(socModel, 1) 
@@ -696,18 +750,18 @@ plot(socModel, 2)
 shapiro.test(residuals(socModel)) 
 
 # run Kruskal-Wallis test instead of one-way ANOVA
-kruskal.test(FSOZ_T0_Gesamt ~ class, data = data_wide) # sig. differences across groups
+kruskal.test(FSozU_T0 ~ class, data = data_wide) # sig. differences across groups
 
-data_wide %>% kruskal_effsize(FSOZ_T0_Gesamt ~ class)
+data_wide %>% kruskal_effsize(FSozU_T0 ~ class)
 
 # social support by class
-soc_class <- summarySE(data_wide, measurevar="FSOZ_T0_Gesamt", groupvars="class", conf.interval=.95) 
+soc_class <- summarySE(data_wide, measurevar="FSozU_T0", groupvars="class", conf.interval=.95) 
 ```
 
 ## generalized self-efficacy
 ```{r gen. self-efficacy across latent classes}
 # boxplot by class
-gseBoxPlot <- ggplot(data_wide, aes(class, GSE_T0_Gesamt, fill=class)) + 
+gseBoxPlot <- ggplot(data_wide, aes(class, GSE_T0, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Gen. Self-Efficacy", x="Class") +
@@ -717,13 +771,13 @@ gseBoxPlot
 
 # get outlier IDs
 gseOutlierIDs <- data_wide %>%
-  identify_outliers(GSE_T0_Gesamt)
+  identify_outliers(GSE_T0)
 
 # check if extreme outlier
 gseOutlierIDs$Code[gseOutlierIDs$is.extreme==T] # no extreme outlier
 
 # check assumptions for one-way ANOVA
-gseModel  <- lm(GSE_T0_Gesamt ~ class, data = data_wide)
+gseModel  <- lm(GSE_T0 ~ class, data = data_wide)
 
 # homogeneity of variance
 plot(gseModel, 1) 
@@ -734,11 +788,11 @@ plot(gseModel, 2)
 shapiro.test(residuals(gseModel)) 
 
 # one-way ANOVA
-gse.fit <- aov_ez("Code","GSE_T0_Gesamt", data_wide, between=c("class"))
+gse.fit <- aov_ez("Code","GSE_T0", data_wide, between=c("class"))
 nice(gse.fit, es="pes") # p < .001
 
 # self-efficacy by class
-gse_class <- summarySE(data_wide, measurevar="GSE_T0_Gesamt", groupvars="class", conf.interval=.95) 
+gse_class <- summarySE(data_wide, measurevar="GSE_T0", groupvars="class", conf.interval=.95) 
 ```
 
 ## Multinomial logistic regression
@@ -750,7 +804,7 @@ no extreme outliers, see above
 ```{r check for multicollinearity}
 # correlate predictors to check for multicollinearity (i.e., correlation coefficient r > .70)
 corr <- data_wide %>%
-  select(LOT_T0_Optimismus, HSF_T0_Gesamt, FSOZ_T0_Gesamt, GSE_T0_Gesamt)
+  select(LOT_Opt_T0, HamSCQ_T0, FSozU_T0, GSE_T0)
 
 c <- rcorr(as.matrix(corr)) # create correlation matrix
 p.mat <- cor.mtest(corr)
@@ -773,17 +827,17 @@ corrplot(c$r, # strength and direction of correlation
 ```{r multinomial logistic regression}
 # extract relevant variables
 mlrdata <- data_wide %>%
-  select(LOT_T0_Optimismus, HSF_T0_Gesamt, FSOZ_T0_Gesamt, GSE_T0_Gesamt, Age, Gender, Kohorte, class)
+  select(LOT_Opt_T0, HamSCQ_T0, FSozU_T0, GSE_T0, Age, Gender, Cohort, class)
 
 # factorize some variables
 mlrdata$Gender <- as.factor(mlrdata$Gender)
-mlrdata$Kohorte <- as.factor(mlrdata$Kohorte)
+mlrdata$Cohort <- as.factor(mlrdata$Cohort)
 
 # dummy code DV
 mlrdata_long <- mlogit.data(mlrdata, choice = "class", shape = "wide")
 
 # mlr model
-mlr.fit = mlogit(class ~ 1 | LOT_T0_Optimismus + HSF_T0_Gesamt + FSOZ_T0_Gesamt + GSE_T0_Gesamt + Age + Gender + Kohorte, data = mlrdata_long, reflevel = "low")
+mlr.fit = mlogit(class ~ 1 | LOT_Opt_T0 + HamSCQ_T0 + FSozU_T0 + GSE_T0 + Age + Gender + Cohort, data = mlrdata_long, reflevel = "low")
 summary(mlr.fit)
 
 # more self-care --> higher prob. of being in high/mediumlow vs. low class
@@ -818,39 +872,59 @@ hist = ggplot(mlrdata, aes(correct$high, color=class, fill=class)) +
 hist
 ```
 
-# Changes in stress and mental health from T3-T4 (impact of the pandemic)
+# Stress and mental health during the pandemic
 
-```{r assessing pandemic impact}
-PSS.mP <- mean(data_pandemic$PSS_P_Gesamt) # moderate perceived stress during pandemic (values > 27 would indicate high stress)
-PSS.sdP <- sd(data_pandemic$PSS_P_Gesamt)
+```{r stress during pandemic}
+PSS.mP <- mean(data_wide_pandemic$PSS_P) # moderate perceived stress during pandemic (values > 27 would indicate high stress)
+PSS.sdP <- sd(data_wide_pandemic$PSS_P)
   
 # pandemic-specific stressor load
-hist_pandemic_stressor_count <- ggplot(data_pandemic, aes(x=COR_HS_P_Count)) + 
+hist_pandemic_stressor_count <- ggplot(data_wide_pandemic, aes(x=COR_HS_P_Count)) + 
   geom_histogram(color="black", fill="gray") +
   scale_x_continuous(limits=c(0,29)) +
   labs(x="", title="Count of experienced pandemic-related stressors") +
   laura_theme()
 hist_pandemic_stressor_count
 
-COR_HS_P_Count.m <- mean(data_pandemic$COR_HS_P_Count)
-COR_HS_P_Count.sd <- sd(data_pandemic$COR_HS_P_Count); 
+COR_HS_P_Count.m <- mean(data_wide_pandemic$COR_HS_P_Count)
+COR_HS_P_Count.sd <- sd(data_wide_pandemic$COR_HS_P_Count)
 
-hist_pandemic_stressor_intensity <- ggplot(data_pandemic, aes(x=COR_HS_P_mean_Intensity)) + 
+hist_pandemic_stressor_intensity <- ggplot(data_wide_pandemic, aes(x=COR_HS_P_Int)) + 
   geom_histogram(color="black", fill="gray") +
   scale_x_continuous(limits=c(1,5)) +
   labs(x="not at all burdensome - extremely burdensome", title="Mean intensity of experienced pandemic-related stressors") +
   laura_theme()
 hist_pandemic_stressor_intensity
 
-COR_HS_P_int.m <- mean(data_pandemic$COR_HS_P_mean_Intensity)
-COR_HS_P_int.sd <- sd(data_pandemic$COR_HS_P_mean_Intensity); 
+COR_HS_P_Int.m <- mean(data_wide_pandemic$COR_HS_P_Int)
+COR_HS_P_Int.sd <- sd(data_wide_pandemic$COR_HS_P_Int)
+```
 
-data_wide_pandemic <- list(data_wide_pandemic, data_wide[, c(1,15,16,17,18)]) %>% reduce(left_join, by = "Code") # add T3 data
+## Most frequently encountered corona stressors
+
+```{r corona stressor item analysis}
+cor_hs_items <- data_wide_pandemic %>% 
+  select(matches('COR_HS_T4')) %>%
+  summarise_all(., sum, na.rm=T)
+
+cor_hs_items
+
+# top 3 stressors:
+# 9 (loss of social contact)
+# 15 (loss of opportunities for recreational activities)
+# 29 (media reports)
+```
+
+## Changes in stress and mental health from T3-T4 (impact of the pandemic)
+
+```{r changes in stress and mental health from T3 to T4}
+
+data_wide_pandemic <- list(data_wide_pandemic, data_wide[, c(1,15,16,17,18)]) %>% reduce(left_join, by = "Code") # add T3 data (i.e., last time point before pandemic)
 
 # paired t-tests to compare T3 and T4 stress
-t.test(data_wide_pandemic$DH_T3_Frequency, data_wide_pandemic$DH_P_freq, paired = T)
-mean(data_wide_pandemic$DH_T3_Frequency)
-mean(data_wide_pandemic$DH_P_freq)
+t.test(data_wide_pandemic$MIMIS_T3_Frequency, data_wide_pandemic$MIMIS_P_freq, paired = T)
+mean(data_wide_pandemic$MIMIS_T3_Frequency)
+mean(data_wide_pandemic$MIMIS_P_freq)
 
 t.test(data_wide_pandemic$LES_T3_Count, data_wide_pandemic$LES_P_Count, paired = T)
 mean(data_wide_pandemic$LES_T3_Count)
@@ -861,11 +935,12 @@ t.test(data_wide_pandemic$BSI_T3_INV, data_wide_pandemic$BSI_P_GSI_INV, paired =
 mean(data_wide_pandemic$BSI_T3_INV)
 mean(data_wide_pandemic$BSI_P_GSI_INV)
 
-t.test(data_wide_pandemic$WHO_T3_Prozentwert, data_wide_pandemic$WHO_P_Gesamt, paired = T)
-mean(data_wide_pandemic$WHO_T3_Prozentwert)
-mean(data_wide_pandemic$WHO_P_Gesamt)
+t.test(data_wide_pandemic$WHO_T3, data_wide_pandemic$WHO_P, paired = T)
+mean(data_wide_pandemic$WHO_T3)
+mean(data_wide_pandemic$WHO_P)
 ```
-Participants do not seem significantly more stressed during the pandemic than they were before - overall moderate levels of perceived stress (*M* = `r round(PSS.mP,2)`, *SD* = `r round(PSS.sdP,2)`). Of 29 pandemic-specific stressors, participants experienced on average `r COR_HS_P_Count.m` (*SD* = `r round(COR_HS_P_Count.sd,2)`) which they rated on a scale from 1 = "not at all burdensome" to 5 = "extremely burdensome". On average stressor intensity was reported as "a bit burdensome" (*M* = `r round(COR_HS_P_int.m,2)`, *SD* = `r round(COR_HS_P_int.sd,2)`).
+
+Participants do not seem significantly more stressed during the pandemic than they were before - overall moderate levels of perceived stress (*M* = `r round(PSS.mP,2)`, *SD* = `r round(PSS.sdP,2)`). Of 29 pandemic-specific stressors, participants experienced on average `r round(COR_HS_P_Count.m,2)` (*SD* = `r round(COR_HS_P_Count.sd,2)`) which they rated on a scale from 1 = "not at all burdensome" to 5 = "extremely burdensome". On average stressor intensity was reported as "a bit burdensome" (*M* = `r round(COR_HS_P_Int.m,2)`, *SD* = `r round(COR_HS_P_Int.sd,2)`). Most participants experienced media reports (`r round((cor_hs_items$COR_HS_T4_29/117*100),2)`%), loss of opportunities for recreational activities (`r round((cor_hs_items$COR_HS_T4_15/117*100),2)`%) and loss of social contact (`r round((cor_hs_items$COR_HS_T4_9/117*100),2)`%)
 The first lockdown in Germany may not have had as negative an impact on students as later restrictions. However, we would need data from another follow-up to be sure.
 
 # Predicting resilience during the Corona pandemic
@@ -876,7 +951,7 @@ Resilient functioning during the pandemic differs depending on trajectory class,
 ## PSS during the pandemic
 ```{r PSS score during pandemic across latent classes}
 # boxplot by class
-pssPBoxPlot <- ggplot(data_wide_pandemic, aes(class, PSS_P_Gesamt, fill=class)) + 
+pssPBoxPlot <- ggplot(data_wide_pandemic, aes(class, PSS_P, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="PSS", x="Class") +
@@ -886,10 +961,13 @@ pssPBoxPlot
 
 # get outlier IDs
 pssPOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(PSS_P_Gesamt) # none
+  identify_outliers(PSS_P) # 1
+
+# output extreme outliers
+pssPOutlierIDs <- pssPOutlierIDs[pssPOutlierIDs$is.extreme==T,] # none
 
 # check assumptions for one-way ANOVA
-pssPModel  <- lm(PSS_P_Gesamt ~ class, data = data_wide_pandemic)
+pssPModel  <- lm(PSS_P ~ class, data = data_wide_pandemic)
 
 # homogeneity of variance
 plot(pssPModel, 1) 
@@ -900,7 +978,7 @@ plot(pssPModel, 2)
 shapiro.test(residuals(pssPModel)) 
 
 # one-way ANOVA
-pssP.fit <- aov_ez("Code","PSS_P_Gesamt", data_wide_pandemic, between=c("class")) # sig. difference
+pssP.fit <- aov_ez("Code","PSS_P", data_wide_pandemic, between=c("class")) # p < .01
 nice(pssP.fit, es="pes") # get partial eta squared instead of generalised eta squared
 
 # post-hoc comparisons
@@ -909,13 +987,13 @@ pssP
 pairs(pssP, adjust="holm")
 
 # PSS during pandemic by class
-pss_p_class <- summarySE(data_wide_pandemic, measurevar="PSS_P_Gesamt", groupvars="class", conf.interval=.95, na.rm=T) 
+pss_p_class <- summarySE(data_wide_pandemic, measurevar="PSS_P", groupvars="class", conf.interval=.95, na.rm=T) 
 ```
 
 ## Optimism during the pandemic
 ```{r LOT optimism score during pandemic across latent classes}
 # boxplot by class
-optPBoxPlot <- ggplot(data_wide_pandemic, aes(class, LOT_P_Optimismus, fill=class)) + 
+optPBoxPlot <- ggplot(data_wide_pandemic, aes(class, LOT_Opt_P, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Optimism", x="Class") +
@@ -925,10 +1003,10 @@ optPBoxPlot
 
 # get outlier IDs
 optPOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(LOT_P_Optimismus) # none
+  identify_outliers(LOT_Opt_P) # none
 
 # check assumptions for one-way ANOVA
-optPModel  <- lm(LOT_P_Optimismus ~ class, data = data_wide_pandemic)
+optPModel  <- lm(LOT_Opt_P ~ class, data = data_wide_pandemic)
 
 # homogeneity of variance
 plot(optPModel, 1) 
@@ -939,23 +1017,22 @@ plot(optPModel, 2)
 shapiro.test(residuals(optPModel)) 
 
 # one-way ANOVA
-optP.fit <- aov_ez("Code","LOT_P_Optimismus", data_wide_pandemic, between=c("class")) # sig. difference
+optP.fit <- aov_ez("Code","LOT_Opt_P", data_wide_pandemic, between=c("class")) # p < .001
 nice(optP.fit, es="pes") # get partial eta squared instead of generalised eta squared
 
 # post-hoc comparisons
-require(emmeans)
 optP <- emmeans(optP.fit, ~ class)
 optP
 pairs(optP, adjust="holm")
 
 # Optimism during pandemic by class
-opt_p_class <- summarySE(data_wide_pandemic, measurevar="LOT_P_Optimismus", groupvars="class", conf.interval=.95, na.rm=T) 
+opt_p_class <- summarySE(data_wide_pandemic, measurevar="LOT_Opt_P", groupvars="class", conf.interval=.95, na.rm=T) 
 ```
 
 ## Self-Care during the pandemic
-```{r HSF score during pandemic across latent classes}
+```{r HamSCQ score during pandemic across latent classes}
 # boxplot by class
-scrPBoxPlot <- ggplot(data_wide_pandemic, aes(class, HSF_P_Gesamt, fill=class)) + 
+scrPBoxPlot <- ggplot(data_wide_pandemic, aes(class, HamSCQ_P, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="Self-Care", x="Class") +
@@ -965,10 +1042,10 @@ scrPBoxPlot
 
 # get outlier IDs
 scrPOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(HSF_P_Gesamt) # none
+  identify_outliers(HamSCQ_P) # none
 
 # check assumptions for one-way ANOVA
-scrPModel  <- lm(HSF_P_Gesamt ~ class, data = data_wide_pandemic)
+scrPModel  <- lm(HamSCQ_P ~ class, data = data_wide_pandemic)
 
 # homogeneity of variance
 plot(scrPModel, 1) 
@@ -979,13 +1056,13 @@ plot(scrPModel, 2)
 shapiro.test(residuals(scrPModel)) # sig.
 
 # use Kruskal-Wallis test instead of ANOVA
-kruskal.test(HSF_P_Gesamt ~ class, data_wide_pandemic) # p < .001
+kruskal.test(HamSCQ_P ~ class, data_wide_pandemic) # p < .001
 
 # Self-Care during pandemic by class
-scr_p_class <- summarySE(data_wide_pandemic, measurevar="HSF_P_Gesamt", groupvars="class", conf.interval=.95, na.rm=T) 
+scr_p_class <- summarySE(data_wide_pandemic, measurevar="HamSCQ_P", groupvars="class", conf.interval=.95, na.rm=T) 
 ```
 
-## FSozU was used at T0, it also has components assessing emotional and practical (i.e. instrumental) support so should correlated with these BSSS scales
+FSozU was used at T0, it also has component assessing emotional support so should be correlated with this BSSS scale
 
 ## BSSS score - perceived emotional support
 ```{r BSSS - perceived emotional support score during pandemic across latent classes}
@@ -1017,52 +1094,16 @@ plot(bsssPESModel, 2)
 shapiro.test(residuals(bsssPESModel)) 
 
 # use Kruskal-Wallis test instead of ANOVA
-kruskal.test(BSSS_P_perEmoSupport ~ class, data_wide_pandemic) # p < .01
+kruskal.test(BSSS_P_perEmoSupport ~ class, data_wide_pandemic) # p < .05
 
 # BSSS - perceived emotional support score during the pandemic by class
 bsssPES_class <- summarySE(data_wide_pandemic, measurevar="BSSS_P_perEmoSupport", groupvars="class", conf.interval=.95, na.rm=T)
 ```
 
-## BSSS score - perceived instrumental support
-```{r BSSS - perceived instrumental support score during pandemic across latent classes}
-# boxplot by class
-bsssPISBoxPlot <- ggplot(data_wide_pandemic, aes(class, BSSS_P_perInstSupport, fill=class)) + 
-  geom_violin() +  
-  geom_boxplot(width=0.2, position=position_dodge(1)) +
-  labs(y="BSSS - perceived instrumental support", x="Class") +
-  scale_fill_manual(values=c(colour1, colour2, colour3, colour4)) +
-  laura_theme()
-bsssPISBoxPlot
-
-# get outlier IDs
-bsssPISOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(BSSS_P_perInstSupport) # 2
-
-# check if extreme outlier
-bsssPISOutlierIDs$Code[bsssPISOutlierIDs$is.extreme==T] # no extreme outlier
-
-# check assumptions for one-way ANOVA
-bsssPISModel  <- lm(BSSS_P_perInstSupport ~ class, data = data_wide_pandemic)
-
-# homogeneity of variance
-plot(bsssPISModel, 1) 
-levene_test(bsssPISModel)
-
-# normality of residuals
-plot(bsssPISModel, 2)
-shapiro.test(residuals(bsssPISModel)) 
-
-# use Kruskal-Wallis test instead of ANOVA
-kruskal.test(BSSS_P_perInstSupport ~ class, data_wide_pandemic) # p < .01
-
-# BSSS - perceived instrumental support score during the pandemic by class
-bsssPIS_class <- summarySE(data_wide_pandemic, measurevar="BSSS_P_perInstSupport", groupvars="class", conf.interval=.95, na.rm=T)
-```
-
 ## GSE during the pandemic
 ```{r GSE score during pandemic across latent classes}
 # boxplot by class
-gsePBoxPlot <- ggplot(data_wide_pandemic, aes(class, GSE_P_Gesamt, fill=class)) + 
+gsePBoxPlot <- ggplot(data_wide_pandemic, aes(class, GSE_P, fill=class)) + 
   geom_violin() +  
   geom_boxplot(width=0.2, position=position_dodge(1)) +
   labs(y="GSE score", x="Class") +
@@ -1072,13 +1113,13 @@ gsePBoxPlot
 
 # get outlier IDs
 gsePOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(GSE_P_Gesamt) # 6
+  identify_outliers(GSE_P) # 6
 
 # check if extreme outlier
 gsePOutlierIDs$Code[gsePOutlierIDs$is.extreme==T] # no extreme outlier
 
 # check assumptions for one-way ANOVA
-gsePModel  <- lm(GSE_P_Gesamt ~ class, data = data_wide_pandemic)
+gsePModel  <- lm(GSE_P ~ class, data = data_wide_pandemic)
 
 # homogeneity of variance
 plot(gsePModel, 1) 
@@ -1089,10 +1130,10 @@ plot(gsePModel, 2)
 shapiro.test(residuals(gsePModel)) 
 
 # use Kruskal-Wallis test instead of ANOVA
-kruskal.test(GSE_P_Gesamt ~ class, data_wide_pandemic) # p < .001
+kruskal.test(GSE_P ~ class, data_wide_pandemic) # p < .001
 
 # GSE score during the pandemic by class
-gseP_class <- summarySE(data_wide_pandemic, measurevar="GSE_P_Gesamt", groupvars="class", conf.interval=.95, na.rm=T) 
+gseP_class <- summarySE(data_wide_pandemic, measurevar="GSE_P", groupvars="class", conf.interval=.95, na.rm=T) 
 ```
 
 ## Resilience during the pandemic
@@ -1108,7 +1149,7 @@ RFPBoxPlot
 
 # get outlier IDs
 RFPOutlierIDs <- data_wide_pandemic %>%
-  identify_outliers(RF_P) 
+  identify_outliers(RF_P) #1
 
 # check if extreme outlier
 RFPOutlierIDs$Code[RFPOutlierIDs$is.extreme==T] # no extreme outlier
@@ -1124,13 +1165,16 @@ levene_test(RFPModel)
 plot(RFPModel, 2)
 shapiro.test(residuals(RFPModel)) 
 
-RFP.fit <- aov_ez("Code","RF_P", data_wide_pandemic, between=c("class")) # sig. difference
-nice(RFP.fit, es="pes") # get partial eta squared instead of generalised eta squared
+# use Kruskal-Wallis test instead of ANOVA
+kruskal.test(RF_P ~ class, data_wide_pandemic) # p < .001
 
-# post-hoc comparisons
-RFP <- emmeans(RFP.fit, ~ class)
-RFP
-pairs(RFP, adjust="holm")
+# Dunn test for post-hoc comparisons
+pwc <- data_wide_pandemic %>% 
+  dunn_test(RF_P ~ class, p.adjust.method = "holm") 
+pwc
+
+# get effect size
+data_wide_pandemic %>% kruskal_effsize(RF_P ~ class)
 
 # Resilient Functioning during the pandemic by class
 RFP_class <- summarySE(data_wide_pandemic, measurevar="RF_P", groupvars="class", conf.interval=.95, na.rm=T) 
@@ -1138,16 +1182,37 @@ RFP_class <- summarySE(data_wide_pandemic, measurevar="RF_P", groupvars="class",
 
 ## Multiple Regression
 
+```{r correlations among predictor variables}
+corrP <- data_wide_pandemic %>%
+  select(LOT_Opt_P, HamSCQ_P, BSSS_P_perEmoSupport, GSE_P, PSS_P)
+
+c <- rcorr(as.matrix(corrP)) # create correlation matrix
+p.mat <- cor.mtest(corrP)
+# plot matrix
+corrplot(c$r, # strength and direction of correlation
+         method = "circle", # shape
+         number.cex = .7, # size of shape
+         addCoef.col = "black", # display correlation coefficient
+         type = "lower", # show only lower half of matrix
+         p.mat = p.mat$p, # get p values
+         sig.level = .05, # set significance level
+         insig = "blank", # do not color insignificant correlations
+         cl.pos = "n", # remove color legend
+         tl.srt = 90, # rotate text labels
+         tl.col = "black", # label color
+         diag = F) # hide diagonale
+```
+
 ```{r resilient functioning - regression model}
 # test whether resilient functioning during the pandemic differed between classes
 
 # mean center predictors
 data_wide_pandemic <- data_wide_pandemic %>%
-    mutate(LOT_P_Optimismus.c = center_this(LOT_P_Optimismus),
-           HSF_P_Gesamt.c = center_this(HSF_P_Gesamt),
+    mutate(LOT_Opt_P.c = center_this(LOT_Opt_P),
+           HamSCQ_P.c = center_this(HamSCQ_P),
            BSSS_P_perEmoSupport.c = center_this(BSSS_P_perEmoSupport),
-           GSE_P_Gesamt.c = center_this(GSE_P_Gesamt),
-           PSS_P_Gesamt.c = center_this(PSS_P_Gesamt),
+           GSE_P.c = center_this(GSE_P),
+           PSS_P.c = center_this(PSS_P),
            Age.c = center_this(Age))
 
 # check all variables for normality, homogeneity of variance, and linearity
@@ -1157,27 +1222,27 @@ panel.bxp <- function(x, ...) {
     par(usr = c(usr[1:2], 0, 2))
     boxplot(x, add = TRUE, horizontal = T)
 }
-pairs(~RF_P + LOT_P_Optimismus.c + HSF_P_Gesamt.c + BSSS_P_perEmoSupport.c + GSE_P_Gesamt.c + PSS_P_Gesamt.c, data = data_wide_pandemic, lower.panel = panel.smooth,
+pairs(~RF_P + LOT_Opt_P.c + HamSCQ_P.c + BSSS_P_perEmoSupport.c + GSE_P.c + PSS_P.c, data = data_wide_pandemic, lower.panel = panel.smooth,
     diag.panel = panel.bxp, upper.panel = NULL, gap = 0)
 
 # change order of factor levels to set low class as reference
 data_wide_pandemic$class <- relevel(data_wide_pandemic$class, ref="low")
   
 # model
-pandemic_model <- lm(RF_P ~ class + LOT_P_Optimismus.c + HSF_P_Gesamt.c + BSSS_P_perEmoSupport.c + GSE_P_Gesamt.c + PSS_P_Gesamt.c, data_wide_pandemic)
+pandemic_model <- lm(RF_P ~ class + LOT_Opt_P.c + HamSCQ_P.c + BSSS_P_perEmoSupport.c + GSE_P.c + PSS_P.c, data_wide_pandemic)
 summary(pandemic_model)
 confint(pandemic_model) # get confidence intervals
 lm.beta(pandemic_model) # get standardized betas
 
 # model with covariates
-pandemic_model.cov <- update(pandemic_model, .~. + Age.c + Gender + Kohorte)
+pandemic_model.cov <- update(pandemic_model, .~. + Age.c + Gender + Cohort)
 summary(pandemic_model.cov)
 
 # model comparison
 anova(pandemic_model, pandemic_model.cov) # n.s.
 
 # model with interaction terms
-pandemic_model.int <- update(pandemic_model, .~. + class:HSF_P_Gesamt.c)
+pandemic_model.int <- update(pandemic_model, .~. + class:HamSCQ_P.c)
 summary(pandemic_model.int)
 
 # model comparison
@@ -1198,13 +1263,18 @@ shapiro.test(residuals(pandemic_model))
 # save diagnostics
 data_wide_pandemic$standardized.residuals <- rstandard(pandemic_model)
 data_wide_pandemic$large.residual <- data_wide_pandemic$standardized.residuals > 2 | data_wide_pandemic$standardized.residuals < -2
-sum(data_wide_pandemic$large.residual) # 6 --> 5.6%
+sum(data_wide_pandemic$large.residual) # 6 cases --> 4.3%
 data_wide_pandemic[data_wide_pandemic$large.residual, c("Code", "class", "standardized.residuals") ]
 data_wide_pandemic$cooks.distance <- cooks.distance(pandemic_model)
 data_wide_pandemic$leverage <- hatvalues(pandemic_model)
 data_wide_pandemic$covariance.ratios <- covratio(pandemic_model)
 
-data_wide_pandemic[data_wide_pandemic$large.residual, c("Code", "cooks.distance", "leverage", "covariance.ratios") ] # DI22LUIS has rather large leverage value
+data_wide_pandemic[data_wide_pandemic$large.residual, c("Code", "cooks.distance", "leverage", "covariance.ratios") ] 
+# 2 cases with rather large leverage value
+
+# average leverage = (6 + 1)/117 = 0.06
+# covariance boundaries: 
+# 1 + 3(6+1)/117 = 1.18; 1-3(6+1)/117 = -0.82 # all cases fall within bourndaries
 
 par(mfrow = c(2, 3))
 plot(pandemic_model, ask = F, which = 1:6)
