@@ -8,8 +8,8 @@ library(tidyverse) # data formatting, ggplot2
 library(magrittr) # piping %<>%
 
 # 1. load and format data -------------------------
-data_cohort3 <- read.csv("../data/cohort3_T6_controls_raw.csv", header=T, sep=",")
-data_cohort4 <- read.csv("../data/cohort4_T4_controls_raw.csv", header=T, sep=",")
+data_cohort3 <- read.csv("../anonymized_data/cohort3_T6_controls_raw.csv", header=T, sep=",")
+data_cohort4 <- read.csv("../anonymized_data/cohort4_T4_controls_raw.csv", header=T, sep=",")
 
 # rename variables to match cohort 4
 names(data_cohort3) <- gsub(x = names(data_cohort3), pattern = "T6", replacement = "T4")  
@@ -191,4 +191,4 @@ data_p <- data_p %>%
   select(sort(current_vars())) %>%
   select(Code, Cohort, Gender, Age, everything())
 
-write.table(data_p, "../data/data_matched_pandemic.csv", sep="\t", col.names = T, row.names = F)
+write.table(data_p, "../anonymized_data/data_matched_pandemic.csv", sep="\t", col.names = T, row.names = F)

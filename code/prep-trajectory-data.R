@@ -11,7 +11,7 @@ source("R_functions/resilience_scores.R") # compute resilient functioning score
 source("R_functions/laura_theme.R")
 
 # 1. load and format data -------------------------
-data <- read.csv("../data/T0-T5_controls.csv", header=T, sep=",")
+data <- read.csv("../anonymized_data/T0-T5_controls.csv", header=T, sep=",")
 str(data)
 
 # as.factor
@@ -25,7 +25,7 @@ duplicates <- data %>%
 
 # delete duplicate (participant apparently took part in both cohort 3 and 4)
 data <- data %>%
-  filter(!data$Code=="IL13SAVI") 
+  filter(!data$Code=="93") 
 
 rm(duplicates, cols) # tidy up
 
@@ -84,7 +84,7 @@ MIMIS_outlier <- data_matched %>%
   mutate(MIMIS_T3_Frequency.z = scale(MIMIS_T3_Frequency)) %>%
   filter(abs(MIMIS_T3_Frequency.z)>3)
 
-data_matched <- data_matched %>% filter(! Code=="ND09LESE")
+data_matched <- data_matched %>% filter(! Code=="166")
 
 # 4. compute resilient functioning (RF) scores ----
 # see van Harmelen et al., 2017, Psychol Med
@@ -315,8 +315,8 @@ timevar = "timepoint", times = c(0,1,2,3), idvar = c("Code"), direction = "long"
 row.names(data_matched_long) <- c() # remove row names
 
 # 6. save data ------------------------------------
-write.table(data_matched_wide, "../data/data_matched_wide.csv", sep="\t", col.names = T, row.names = F)
-write.table(data_matched_long, "../data/data_matched_long.csv", sep="\t", col.names = T, row.names = F)
+write.table(data_matched_wide, "../anonymized_data/data_matched_wide.csv", sep="\t", col.names = T, row.names = F)
+write.table(data_matched_long, "../anonymized_data/data_matched_long.csv", sep="\t", col.names = T, row.names = F)
 
 # extract RF scores, their underlying components and possible trajectory predictors for Mplus
 data_m <- data_matched_wide %>%
@@ -331,7 +331,7 @@ data_m$Gender <- recode(data_m$Gender, '1'='0', '2'='1') # 0 = male, 1 = female
 data_m$Age <- scale(data_m$Age)
 data_m$Cohort <- recode(data_m$Cohort, '3'='0', '4'='1')
 
-write.table(data_m, "../data/data4Mplus.csv", sep=",", col.names = F, row.names = F) # data to be read into Mplus
+write.table(data_m, "../anonymized_data/data4Mplus.csv", sep=",", col.names = F, row.names = F) # data to be read into Mplus
 
 # covariance matrix
 cov(data_m[13:16])

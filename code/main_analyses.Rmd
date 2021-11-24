@@ -62,9 +62,9 @@ center_this <- function(x) as.vector(scale(x, scale=FALSE))
 ```
 
 ```{r import and format data, include=F}
-data_long <- read.csv("../data/data_matched_long.csv", header=T, sep="\t") # data T0-T3, long format
-data_wide <- read.csv("../data/data_matched_wide.csv", header=T, sep="\t") # data T0-T3, wide format
-data_pandemic <- read.csv("../data/data_matched_pandemic.csv", header=T, sep="\t") # data pandemic
+data_long <- read.csv("../anonymized_data/data_matched_long.csv", header=T, sep="\t") # data T0-T3, long format
+data_wide <- read.csv("../anonymized_data/data_matched_wide.csv", header=T, sep="\t") # data T0-T3, wide format
+data_pandemic <- read.csv("../anonymized_data/data_matched_pandemic.csv", header=T, sep="\t") # data pandemic
 classes <- read.table("../Mplus_files/02_lcga_output_4-class.txt", header=F) # trajectory class assignment output after LGCA analysis in Mplus
 
 classes <- cbind(data_wide[1], classes$V13) # add id to classes
@@ -72,26 +72,13 @@ colnames(classes) <- c("Code", "class")
 classes$class <- as.factor(classes$class)
 classes$class <- recode(classes$class, "1"="low", "2"="high", "3"="medium", "4"="mediumlow")
 
-write.table(classes, "../data/RF_trajectory_classes.csv", sep="\t", col.names = T, row.names = F)
+#write.table(classes, "../anonymized_data/RF_trajectory_classes.csv", sep="\t", col.names = T, row.names = F)
 
 # add classes to data
 data_wide <- data_wide %>% left_join(classes)
 data_long <- data_long %>% left_join(classes)
 
 data_wide$Code <- as.factor(data_wide$Code)
-
-# fix some participant codes in pandemic data where German umlaut is not correctly displayed for some reason
-data_pandemic$Code[data_pandemic$Code=="AN25R‹JU"] <- "AN25RÜJU"
-data_pandemic$Code[data_pandemic$Code=="GA20K÷NA"] <- "GA20KÖNA"
-data_pandemic$Code[data_pandemic$Code=="IL09WöLI"] <- "IL09WÜLI"
-data_pandemic$Code[data_pandemic$Code=="OH02OFBR"] <- "OH2OFBR" # typo
-data_pandemic$Code[data_pandemic$Code=="ON18RöIS"] <- "ON18RÜIS"
-data_pandemic$Code[data_pandemic$Code=="ST03KôBI"] <- "ST03KÖBI"
-data_pandemic$Code[data_pandemic$Code=="AN09WöJA"] <- "AN09WÜJA"
-data_pandemic$Code[data_pandemic$Code=="ƒR04MAFR"] <- "ÄR04MAFR"
-data_pandemic$Code[data_pandemic$Code=="LK11GôKA"] <- "LK11GÖKA"
-data_pandemic$Code[data_pandemic$Code=="LK26RöAL"] <- "LK26RÜAL"
-data_pandemic$Code[data_pandemic$Code=="SA29R‹DO"] <- "SA29RÜDO"
 
 # merge classes & pandemic data
 data_wide_pandemic <- list(classes, data_pandemic) %>% reduce(left_join, by = "Code")
